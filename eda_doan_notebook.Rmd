@@ -1,0 +1,411 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+EDA process of a dataset of concrete making.
+
+# Import packages
+
+```{r}
+# Delete all old variables.
+rm(list=ls())
+# libraries needed to use
+Packages <- c("dplyr", "ggplot2", "tidyverse", "corrplot", "readxl", "RColorBrewer", "psych", "mlbench", "caret", "lmtest")
+lapply(Packages, library, character.only = TRUE)
+```
+Because this notebook is so long, a lot of packages are needed to conduct this analysis experiment. 
+
+# Import data
+
+Set the directory which has the data
+```{r}
+setwd("D:/2ndYear/2ndsemester/ThietKePhanTichThucNghiem/Do An")
+```
+Load data into 'data' variable
+```{r}
+data<- read_excel("Concrete_Data.xls")
+```
+Take a look at the columns' names
+```{r}
+names(data)
+```
+Because their names are too long, they make reading and using data more complicated. We should rename them shorter.
+```{r}
+names(data)<- c("Cement", "Blast", "FlyAsh", "Water", "SupPlas", "CoarseAgg","FineAgg","age", 'strength')
+names(data)
+```
+Now their names are short, so we will find it easy to view and use to apply in the code.
+
+# Descriptive Statistics
+```{r}
+# psych library for using 'describe' function
+library(psych) 
+describe(data)
+# no longer need this library, so we will remove/detach it 
+detach(package:psych) 
+```
+The dataset **Concrete Compressive Strength** was collected by professor I-Cheng Yeh from Chung-Hua University. It can be downloaded from [this site](https://archive.ics.uci.edu/ml/datasets/concrete+compressive+strength).
+
+*Number of Instances*: 1030
+
+*Number of Attributes:* 9
+
+*Date Donated* 2007 August 3rd
+
+
+```{r}
+#Box plot of Cement
+ggplot(data,aes(x=Cement))+geom_boxplot()
+```
+Cement elements have a data distribution towards the middle.
+
+
+```{r}
+# Histogram of cement
+ggplot(data, aes(x=Cement)) +
+  geom_histogram(position = "identity", binwidth = 10, color="#01937C", fill="#B6C867") +
+  geom_freqpoly(color='red', size = 1)
+```
+The spread and distribution of the factor Cement are not skewed to one side, so there is few outliers.
+
+
+Hexbin chart cement vs strength
+```{r}
+# Hexbin chart cement vs strength
+my_colors=colorRampPalette(rev(brewer.pal(11,'Spectral')))
+ggplot(data = data,aes(x=Cement, y=strength))+
+  stat_bin2d(bins=35)+ 
+  scale_fill_gradientn(colours=my_colors(32), trans="log")
+```
+
+
+```{r}
+# Box plot of Blast Furnace Slag 
+ggplot(data,aes(x=Blast))+geom_boxplot()
+```
+```{r}
+#Histogram of Blast Furnace Slag  
+ggplot(data, aes(x=Blast)) +
+  geom_histogram(position = "identity", binwidth = 10, color="#01937C", fill="#B6C867") +
+  geom_freqpoly(color='red', size = 2)
+```
+The factor *Blast Furnace Slag* has a very large deviation with the distribution of values close to zero and a lot of outliers.
+
+# Caret - Feature selection
+
+A challenge is that the number of attributes is very large, while relying on visual analysis will not guarantee the objectivity and accuracy of the attribute selection. We decided to proceed with applying Machine Learning in attribute selection. The algorithm used is \textbf{Recursive Feature Elimination} (RFE - Regressive Feature Elimination).
+
+```{r}
+set.seed(7)
+```
+
+RFE is wrapper-style, because it uses the Random Forest algorithm in its core to help evaluate the effectiveness of attribute selection. It starts with using the entire attribute, then effectively removes it gradually to achieve the desired number of important attributes. This efficient computational process has made it popular among attribute selection methods.
+```{r}
+control <- rfeControl(functions=rfFuncs, method="cv", number=10)
+# run the RFE algorithm
+results <- rfe(data[,1:8], 
+               as.matrix(data[,9]), 
+               sizes=c(1:8), 
+               rfeControl=control)
+
+```
+We proceed to use the function \textbf{rfe} built-in package \textbf{caret}. The model is run with 10 loops and results with the 5 most significant attributes out of the 8 initial input attributes, including: \textbf{age, Cement, Water, FineAgg, Blast}.
+```{r}
+# summarize the results
+print(results)
+```
+
+The \textbf{Blast} attribute was perhaps the most surprising as we had assumed it was a highly likely attribute to be removed after visual analysis. However, when using \textit{rfe} the core is the Random Forest algorithm, the \textbf{Blast} property yields significant results. This shows that Machine Learning can play an important role in attribute analysis, no less than other data visualization and analysis methods.
+```{r}
+# plot the results
+plot(results, type=c("g", "o"))
+detach(package:mlbench)
+detach(package:caret)
+```
+
+# ANOVA Analysis
+
+## First ANOVA
+
+We can make two hypotheses as follows:
+
+* *Null hypotheses 1*: Means of individual attributes are not statistically significant.
+
+* *Alternative hypotheses 1*: Means of individual attributes are statistically significant.
+
+* *Null hypotheses 2*: There is no interaction between attributes.
+
+* *Alternative hypotheses 2*: There is interaction between attributes.
+```{r}
+av1<-aov(strength~age* Cement* Water* FineAgg* Blast, data=data)
+summary(av1)
+
+```
+* Five individual attributes: *age, Cement, Water, FineAgg, Blast* all have statistical significance with P-values < 0.05. This proves that using the attribute selection by the Random Forest algorithm gives reliable results.
+* Six interactions between two attributes *age:Cement, age:Water, age:FineAgg, Water:FineAgg, Cement:Blast* and *FineAgg:Blast* are statistically significant with P-values < 0.05.
+* Four interactions between two attributes are not statistically significant, including *Cement:Water*, *Cement:FineAgg*, *age:Blast* and *Water:Blast*.
+* Five interactions between 3 attributes including *age:Cement:FineAgg, Cement:Water:FineAgg, age:Water:Blast, Cement:Water:Blast* and *Water:FineAgg:Blast* are all statistically significant with P-values < 0.05.
+* Five interactions between 3 attributes are not statistically significant with P-values > 0.05 including *age:Cement:Water, age:Water:FineAgg, age:Cement:Blast, age:FineAgg:Blast* and *Cement:FineAgg:Blast*.
+* The *age:Cement:Water:FineAgg* and *age:Cement:FineAgg:Blast* interactions are not statistically significant with P-values of 0.77638 and 0.076222, respectively, greater than 0.05.
+* Two interactions *age:Cement:Water:Blast* and *Cement:Water:FineAgg:Blast* are statistically significant with P-values < 0.05.
+* The *age:Cement:Water:FineAgg:Blast* interaction is not statistically significant with P-value > 0.05, so we do not use this interaction in building the model.
+
+## Second ANOVA
+In this 2nd ANOVA test, we only choose individual attributes and their interactions that are statistically significant at the 1st ANOVA test to conduct the test.
+```{r}
+# Second ANOVA
+av2<-aov(strength~age+ Cement+ Water+ FineAgg+ Blast
+         +age:Cement+ age:Water+ age:FineAgg+ Water:FineAgg+ 
+           Cement:Blast+ FineAgg:Blast+age:Cement:FineAgg+ 
+           Cement:Water:FineAgg+ age:Water:Blast+ 
+           Cement:Water:Blast+ Water:FineAgg:Blast+
+           age:Cement:Water:Blast+ 
+           Cement:Water:FineAgg:Blast+ age:Water:FineAgg:Blast
+         ,data=data)
+summary(av2)
+
+```
+* Four interactions were not statistically significant, including *Cement:Water:FineAgg, Cement:Water:Blast, Water:FineAgg:Blast, age:Cement:Water:Blast* with P values of 0.77930, 0.09032, 0.47388, 0.24519, respectively. (both greater than 0.05)
+* The remaining individual attributes and interactions are all statistically significant.
+
+## Third ANOVA
+In this 3rd ANOVA test, we remove the interactions between attributes that are not statistically significant in the 2nd ANOVA test and take the rest to conduct the test.
+```{r}
+av3<-aov(strength~age+ Cement+ Water+ FineAgg+ Blast
+         +age:Cement+ age:Water+ age:FineAgg+Water:FineAgg+ 
+           Cement:Blast+ FineAgg:Blast+
+           age:Cement:FineAgg+ age:Water:Blast
+         +Cement:Water:FineAgg:Blast+ age:Water:FineAgg:Blast
+         ,data=data)
+summary(av3)
+```
+* A non-statistically significant interaction included *age:Water:Blast* with a P-value = 0.05479 (greater than 0.05).
+* The remaining individual attributes and interactions are all statistically significant.
+
+## Fourth ANOVA
+Similar to the 2nd and 3rd ANOVA tests, we exclude the interactions between the attributes that are not statistically significant and take the remainder for testing.
+```{r}
+# Fourth ANOVA
+av4<-aov(strength~age+ Cement+ Water+ FineAgg+ Blast
+         + age:Cement+ age:Water+ age:FineAgg+ Water:FineAgg+ Cement:Blast+ FineAgg:Blast
+         +age:Cement:FineAgg
+         + Cement:Water:FineAgg:Blast+ age:Water:FineAgg:Blast
+         ,data=data)
+summary(av4)
+```
+* An interaction that is not statistically significant includes *age:Water:FineAgg:Blast* with P-value = 0.45510 (greater than 0.05).
+* The remaining individual attributes and interactions are all statistically significant.
+
+## Fifth ANOVA
+At this 5th ANOVA test, all basic attributes and their interactions are statistically significant with P value > 0.05.
+```{r}
+# Fifth ANOVA
+av5<-aov(strength~age+ Cement+ Water+ FineAgg+ Blast
+         + age:Cement+ age:Water+ age:FineAgg+ Water:FineAgg+ 
+           Cement:Blast+ FineAgg:Blast+age:Cement:FineAgg
+         + Cement:Water:FineAgg:Blast
+         ,data=data)
+summary(av5)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(av5)
+```
+
+Check heteroscedasticity 
+
+```{r}
+lmtest::bptest(av5, 
+               ~ age*Cement + age*Water + age*FineAgg + Water*FineAgg + Cement*Blast + FineAgg*Blast + age*Cement*FineAgg + Cement*Water*FineAgg + age*Water*Blast + Cement*Water*Blast + Water*FineAgg*Blast + age*Cement*Water*Blast + age*Water*FineAgg*Blast + Cement*Water*FineAgg*Blast + I(age^2) + I(Cement^2) + I(Water^2)+ I(FineAgg^2)+ I(Blast^2), 
+               data = data)
+```
+
+Box-Cox transformation
+
+```{r}
+data_new <- subset(data, select = c(age, Cement, Water, FineAgg, Blast, strength) )
+distBCMod <- caret::BoxCoxTrans(data_new$strength)
+print(distBCMod)
+
+```
+```{r}
+data_new <- cbind(data_new, strength_new=predict(distBCMod, data_new$strength)) # append the transformed variable to cars
+av_new<-aov(strength~age*Cement + age*Water + age*FineAgg + Water*FineAgg + Cement*Blast + FineAgg*Blast +
+              age*Cement*FineAgg + Cement*Water*FineAgg + age*Water*Blast + Cement*Water*Blast + Water*FineAgg*Blast +
+              age*Cement*Water*Blast + age*Water*FineAgg*Blast + Cement*Water*FineAgg*Blast +age+ Cement+ Water+ FineAgg+ Blast, data=data)
+bptest(av_new)
+
+```
+```{r}
+plot(av_new)
+```
+
+```{r}
+lmtest::bptest(av_new, 
+               ~ age*Cement + age*Water + age*FineAgg + Water*FineAgg + Cement*Blast + FineAgg*Blast + age*Cement*FineAgg + Cement*Water*FineAgg + age*Water*Blast + Cement*Water*Blast + Water*FineAgg*Blast + age*Cement*Water*Blast + age*Water*FineAgg*Blast + Cement*Water*FineAgg*Blast + I(age^2) + I(Cement^2) + I(Water^2)+ I(FineAgg^2)+ I(Blast^2), data = data_new)
+```
+
+# Basic regression
+I will build a Linear Regression model using a basic set of parameters.
+
+The general regression equation of the model:
+\begin{equation}
+ \begin{aligned}
+    strength = & \beta_0 + \beta_1\times \mathrm{age} + \beta_2\times \mathrm{Cement} + \\
+    & \beta_3\times Water + \beta_4\times FineAgg + \beta_5\times Blast 
+ \end{aligned}
+\end{equation}
+Next, we hypothesize the following:
+
+* **Null hypothesis:** Each attribute has no effect on the output.
+* **Altenative hypothesis:** Each attribute affects the output.
+
+```{r}
+Train <- read.csv("Train.csv")
+relation_basic <- lm(formula = strength ~ age + Cement + Water + FineAgg + Blast, data=Train)
+summary(relation_basic)
+```
+* The results show that all five attributes have $P < 0.05$ => Altenative hypothesis is true for all attributes. The obtained regression equation is:
+\begin{equation}
+ \begin{aligned}
+        strength = & 86.716211 + 0.112919\times \mathrm{age} + 0.077919\times \mathrm{Cement} \\
+    &- 0.34897\times Water -0.023886\times FineAgg + 0.055913\times Blast
+ \end{aligned}
+\end{equation}
+* *R-Squared Adjusted* of basic parameter model: 0.5582.
+
+```{r}
+bptest(relation_basic,  ~ age + Cement + Water + FineAgg + Blast,
+       data=Train)
+```
+
+```{r}
+plot(fitted(relation_basic), resid(relation_basic), xlab='Fitted Values', ylab='Residuals')
+abline(0,0)
+```
+# Linear Regression
+Through ANOVA testing, we have filtered out statistically significant attributes and relationships. Based on that, we get the following general regression model:
+\begin{equation}
+  \begin{aligned}
+        strength = & \beta_0 + \beta_1\times age + \beta_2\times Cement + \beta_3\times Water + \beta_4\times FineAgg + \beta_5\times Blast \\
+        & + \beta_6\times age\times Cement + \beta_7\times age\times Water + \beta_8\times age\times FineAgg \\
+        & + \beta_9\times Water\times FineAgg + \beta_{10}\times Cement\times Blast + \beta_{11}\times FineAgg\times Blast \\
+        & + \beta_{12}\times age\times Cement\times FineAgg \\
+        & + \beta_{13}\times Cement\times Water\times FineAgg\times Blast 
+    \end{aligned}
+\end{equation}
+
+```{r}
+relation <- lm(formula = strength~age + Cement + Water + FineAgg + Blast + age:Cement + age:Water + age:FineAgg + Water:FineAgg + Cement:Blast + FineAgg:Blast + age:Cement:FineAgg + Cement:Water:FineAgg:Blast, data=Train)
+summary(relation)
+```
+* Based on the result of linear regression model, we pick out the attributes and relationships which are statistically significant and we have obtained the regression equation as follows:
+\begin{equation}
+    \begin{aligned}
+        strength = & 1.912\times age + 0.06601\times Cement - 0.1459\times Blast - 0.001964\times age\times Cement \\
+        & - 0.004274\times age\times Water - 0.001166\times age\times FineAgg \\
+        & + 0.0001722\times FineAgg\times Blast \\
+        & + 2.982\times 10^{-9} \times Cement\times Water\times FineAgg\times Blast
+    \end{aligned}
+\end{equation}
+
+A model that suffers from **heterogeneity** of covariance will render the regression results unreliable and cannot be considered an accurate model.
+
+More specifically in regression analysis, Heteroscedasticity is the concept of residuals or errors. Then, the variance of the errors in a regression model is not stable for all predicted points. In order for the model results to be highly reliable, the variance of the residuals in all the prediction points needs to be stable.
+
+To test the Heteroscedasticity, we address 2 hypothesis:
+* *Null hypothesis*: Homoscedasticity. (The model residuals are distributed with stable variance.)
+* *Alternative hypothesis:* heteroscedasticity (The model residuals are distributed with the scattering variance.)
+```{r}
+plot(fitted(relation), resid(relation), xlab='Fitted Values', ylab='Residuals')
+abline(0,0)
+```
+First, visually, we perform a graph of the correlation between the residuals and the fitted values. We see that the residuals are scattered with an increasingly random and irregular dispersion for large values. Therefore, it can be assumed that the model has encountered heteroscedasticity. 
+
+In addition, statistically, in order to achieve a more accurate test, we use the **Breusch-Pagan test** to test the two hypotheses above.
+
+```{r}
+anova(relation)
+bptest(relation, data=Train) # the result shows Heteroscedasticity of the dataset
+
+```
+From the observed results from *Breusch-Pagan test*, we see that p-value < 0.05. Therefore, rejecting the null hypothesis, the built model exists heteroscedasticity.
+
+# Weighted Least Squares Regression
+
+This model has the ability to improve heteroscedasticity by giving more weight to observations with low residual variance, thereby helping the model achieve higher accuracy for all variables.
+```{r}
+#define weights to use
+wt <- 1 / lm(abs(relation$residuals) ~ relation$fitted.values)$fitted.values^2
+#perform weighted least squares regression
+wls_model <- lm(strength~age + Cement + Water + FineAgg + Blast + age:Cement + age:Water + age:FineAgg + Water:FineAgg + Cement:Blast + FineAgg:Blast + age:Cement:FineAgg + Cement:Water:FineAgg:Blast, data = Train, weights=wt)
+#view summary of model
+summary(wls_model)
+```
+
+Based on the result tables, we obtained the *Weighted Least Squares Regression* equation as follows:
+\begin{equation}
+\begin{aligned}
+    strength =  &  2.06\times age + 7.058\times 10^{-2}\times Cement \\
+    &-1.383\times 10^{-1}\times Blast \\
+    &-1.986\times 10^{-3}\times age\times Cement \\
+    &-4.811\times 10^{-3}\times age\times Water \\
+    &-1.169\times 10^{-3}\times age\times FineAgg \\
+    &-5.489\times 10^{-4}\times  Water\times FineAgg \\ &+1.783e\times 10^{-4}\times FineAgg\times Blast \\
+    &+2.358\times 10^{-6}\times age\times Cement\times FineAgg
+\end{aligned}
+\end{equation}
+
+In the above equation, the adjusted R-Squared value is 64.12%. Thus, the independent variables and its interaction can only explain 64.12% of the variation of the dependent variable. The rest is explained by out-of-model variables and random error. From the results of *residual standard error*, we can see that the problem of heteroscedasticity has been solved, although the adjusted R-Squared has decreased but not significantly, compensating for the increased reliability of the model.
+
+```{r}
+interact = c("age", "Cement","Water", "FineAgg", "Blast", "age:Cement", "age:Water",
+             "age:FineAgg", "Water:FineAgg", "age:Water:Blast", 
+             "age:Cement:Water:FineAgg","age:Cement:FineAgg:Blast")
+coef(summary(wls_model))[interact[10], "Estimate"]
+```
+
+
+```{r}
+# Predict 
+Test<- read.csv("Test.csv")
+pred_cof = c()
+interact = c("age", "Cement","Water", "FineAgg", "Blast", "age:Cement", "age:Water",
+             "age:FineAgg", "Water:FineAgg", "age:Water:Blast", 
+             "age:Cement:Water:FineAgg","age:Cement:FineAgg:Blast")
+for(i in 1:12){
+  pred_cof <- c(pred_cof, coef(summary(wls_model))[interact[i], "Estimate"])
+}
+predicted_values = c()
+
+for(i in 1:nrow(Test)) {       # for-loop over rows
+  Cement <-Test[i, 2:10][["Cement"]]
+  Blast <-Test[i, 2:10][["Blast"]]
+  FlyAsh <-Test[i, 2:10][["FlyAsh"]]
+  Water <-Test[i, 2:10][["Water"]]
+  SupPlas <-Test[i, 2:10][["SupPlas"]]
+  CoarseAgg <-Test[i, 2:10][["CoarseAgg"]]
+  FineAgg  <-Test[i, 2:10][["FineAgg"]]
+  age <-Test[i, 2:10][["age"]]
+  pred =0
+  pred = pred_cof[1] * age + pred_cof[2]*Cement +
+    pred_cof[3]*Water + pred_cof[4]*FineAgg + pred_cof[5]*Blast + 
+    pred_cof[6]*age*Cement + pred_cof[7]*age*Water + 
+    pred_cof[8]*age*FineAgg + pred_cof[9]*Water*FineAgg + 
+    pred_cof[10]*age*Water*Blast+ pred_cof[11]*age*Cement*Water*FineAgg + 
+    pred_cof[12]*age*Cement*FineAgg*Blast
+  predicted_values <- c(predicted_values, pred)
+}
+predicted_values <- predict(wls_model, Test)
+```
+
+
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
